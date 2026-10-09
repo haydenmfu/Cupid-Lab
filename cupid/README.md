@@ -67,10 +67,6 @@ The sample graph demonstrates logic from the user's references (branching, fast 
 - `server.mjs`: local static preview server.
 - `tests/engine.test.mjs`: boundary, reciprocal matching, missing-answer and validation checks.
 
-## Agent interface
-
-When supported by the browser, the page registers a read-only `evaluate_cupid_pair` tool. It returns categorical results and step counts, without profile fields or private answers. The normal interface works without WebMCP.
-
 ## Tree editor
 
 The light theme uses soft blue binary questions, green scalar questions, and purple organizational blocks. Click a node to open a floating settings panel. Drag an output to a compatible input to connect; numbered block inputs accept only the matching question type. Red dots indicate missing branch destinations or block inputs; green dots are connected. Unused optional value outputs and the start inlet are neutral, not errors. Value outputs can supply a block independently of branch destinations. Set a binary or scalar question to `mode: "input"` to supply a block without requiring yes/no or range destinations. The flow input is the leftmost dot; numbered dots are block inputs.
@@ -84,3 +80,9 @@ Canvas controls: scroll up/down to zoom around the pointer; left-drag empty grid
 
 
 Typography: Patrick Hand provides non-cursive handwritten lettering for headings, navigation, and compact tree labels on a warm paper canvas. DM Sans remains on forms and longer text for readability. Fonts load from Google Fonts, with local fallback stacks.
+
+## Anonymous matching preview
+
+Matches shows the number of mutually compatible trees, independent of the separate attraction rating. It displays one unresolved question at a time without owner identity, branch destinations, or rejection traces. Rejected and completed trees stop contributing questions. Skips last for the current session. This local prototype still stores both test profiles together; the person switcher is not an account privacy boundary.
+
+Progress summaries count decision nodes, excluding outcomes and contained input questions. The denominator is decisions already passed plus the longest remaining route to Compatible after the selected branches. Invalid/empty trees report 0/0. Completion thresholds are integers from 1–100 (default 100); partial acceptance applies to unresolved compatible paths, while explicit Reject/Friends outcomes remain final. These aggregate metrics can still reveal changes in progress; this remains a local UI prototype.
