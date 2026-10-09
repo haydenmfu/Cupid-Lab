@@ -46,6 +46,7 @@ export function layoutTree(tree){
     const next=crossings();if(next<=score){score=next;best=layers.map(l=>[...l]);}
   }
   const width=Math.max(1000,...best.map(l=>l.length*280+100));
-  for(let r=0;r<best.length;r++)best[r].forEach((id,i)=>{const n=tree.nodes.find(n=>n.id===id);if(n){n.x=Math.round((width-best[r].length*280)/2+i*280);n.y=80+r*270;}});
-  return {width,height:Math.max(850,best.length*270+160),crossings:score};
+  const rowGap=Math.max(270,...tree.nodes.filter(n=>n.type==='count').map(n=>150+(n.inputs?.length||0)*65));
+  for(let r=0;r<best.length;r++)best[r].forEach((id,i)=>{const n=tree.nodes.find(n=>n.id===id);if(n){n.x=Math.round((width-best[r].length*280)/2+i*280);n.y=80+r*rowGap;}});
+  return {width,height:Math.max(850,best.length*rowGap+160),crossings:score};
 }

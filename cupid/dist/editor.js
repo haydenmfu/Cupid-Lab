@@ -1,3 +1,4 @@
+import {containQuestion,releaseQuestion} from './containers.js';
 import {TYPES,clone,edges,validateTree} from './engine.js';
 import {connections,inputsFor,layoutTree,setFlow,removeConnection,migrateTree} from './graph-model.js';
 
@@ -7,14 +8,14 @@ let cancelConnection=null;
 const helpText='Scroll to zoom · Drag grid to pan · Drag dots to connect · Click a node or line to edit';
 const question=n=>['boolean','scale','category'].includes(n.type);
 const group=n=>n.type==='boolean'?'binary':n.type==='scale'?'scalar':['count','sum','hobbies'].includes(n.type)?'organization':'other';
-const size=t=>({width:Math.max(1200,...t.nodes.map(n=>n.x+310)),height:Math.max(900,...t.nodes.map(n=>n.y+300))});
+const size=t=>({width:Math.max(1200,...t.nodes.map(n=>n.x+310)),height:Math.max(900,...t.nodes.map(n=>n.y+(n.type==='count'?180+(n.inputs?.length||0)*65:300)))});
 function marker(label,attributes,connected){return `<button type="button" class="port ${connected===null?'available':connected?'connected':'unconnected'}" ${attributes} aria-label="${esc(label)}" title="${esc(label)}">${connected===null?'○':connected?'✓':'!'}</button>`;}
 export function editorMarkup(tree,key){
   if(ownerKey!==key){ownerKey=key;undo=null;pending=null;closePopup();}
   const {width,height}=size(tree),issues=validateTree(tree),links=connections(tree);
-  return `<section class="graph-editor"><div class="editor-toolbar"><div class="tabs"><button data-editor="visual" class="${view==='visual'?'active':''}">Tree editor</button><button data-editor="advanced" class="${view==='advanced'?'active':''}">Advanced editor</button></div><div class="actions"><button data-editor="undo" ${!undo?'disabled':''}>Undo</button><button data-editor="cleanup">Clean up tree</button><button data-editor="clear" class="danger">Clear tree</button><button data-editor="fit">Fit</button><button data-editor="minus" aria-label="Zoom out">−</button><span class="small">${Math.round(zoom*100)}%</span><button data-editor="plus" aria-label="Zoom in">+</button><button class="primary" data-editor="add">+ Add node</button></div></div><div class="editor-help" role="status">${pending?'Select a compatible input dot to connect. Escape cancels.':helpText}</div>${view==='advanced'?`<div class="advanced"><textarea id="tree-json" class="code" aria-label="Tree JSON" spellcheck="false">${esc(JSON.stringify(tree,null,2))}</textarea><div class="actions"><button data-editor="apply" class="primary">Apply changes</button><button data-editor="import">Import tree</button><input id="tree-import" type="file" accept=".json" hidden></div><p id="editor-error" class="error"></p></div>`:`<div class="graph-scroll"><div class="graph-space" style="width:${width*zoom}px;height:${height*zoom}px"><div class="graph-canvas" style="width:${width}px;height:${height}px;transform:scale(${zoom})">${!tree.nodes.length?'<div class="empty-tree"><h2>What matters to you?</h2><p>Start with one question, then connect your ideas.</p><button class="primary" data-editor="add">+ Add your first node</button></div>':''}<svg class="graph-wires" width="${width}" height="${height}"></svg>${tree.nodes.map(n=>{
+  return `<section class="graph-editor"><div class="editor-toolbar"><div class="tabs"><button data-editor="visual" class="${view==='visual'?'active':''}">Tree editor</button><button data-editor="advanced" class="${view==='advanced'?'active':''}">Advanced editor</button></div><div class="actions"><button data-editor="undo" ${!undo?'disabled':''}>Undo</button><button data-editor="cleanup">Clean up tree</button><button data-editor="clear" class="danger">Clear tree</button><button data-editor="fit">Fit</button><button data-editor="minus" aria-label="Zoom out">−</button><span class="small">${Math.round(zoom*100)}%</span><button data-editor="plus" aria-label="Zoom in">+</button><button class="primary" data-editor="add">+ Add node</button></div></div><div class="editor-help" role="status">${pending?'Select a compatible input dot to connect. Escape cancels.':helpText}</div>${view==='advanced'?`<div class="advanced"><textarea id="tree-json" class="code" aria-label="Tree JSON" spellcheck="false">${esc(JSON.stringify(tree,null,2))}</textarea><div class="actions"><button data-editor="apply" class="primary">Apply changes</button><button data-editor="import">Import tree</button><input id="tree-import" type="file" accept=".json" hidden></div><p id="editor-error" class="error"></p></div>`:`<div class="graph-scroll"><div class="graph-space" style="width:${width*zoom}px;height:${height*zoom}px"><div class="graph-canvas" style="width:${width}px;height:${height}px;transform:scale(${zoom})">${!tree.nodes.length?'<div class="empty-tree"><h2>What matters to you?</h2><p>Start with one question, then connect your ideas.</p><button class="primary" data-editor="add">+ Add your first node</button></div>':''}<svg class="graph-wires" width="${width}" height="${height}"></svg>${tree.nodes.filter(n=>!tree.nodes.some(b=>b.type==='count'&&b.inputs?.includes(n.id)&&n.mode==='input')).map(n=>{
     const inputs=inputsFor(n),flows=edges(n),dataUsed=links.some(e=>e.kind==='data'&&e.from===n.id);
-    return `<article class="graph-node ${group(n)}" data-card="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px" tabindex="0" aria-label="Edit ${esc(n.label)}"><div class="node-inputs">${n.mode!=='input'?marker('Flow input: '+n.label,`data-flow-in="${esc(n.id)}"`,n.id===tree.start?null:links.some(e=>e.kind==='flow'&&e.to===n.id)) :''}${inputs.map((id,i)=>`<div class="input-slot">${marker(`Input ${i+1}: ${id?tree.nodes.find(q=>q.id===id)?.label:'not connected'} · ${n.type==='count'?'binary only':'scalar only'}`,`data-data-in="${esc(n.id)}" data-slot="${i}"`,!!id)}<span>${i+1}</span></div>`).join('')}</div><header><span>${n.type==='hobbies'?'Auto check':esc(TYPES[n.type])}</span><span>${tree.start===n.id?'START':'⋮⋮'}</span></header><div class="graph-node-title">${esc(n.label)}</div>${['count','sum'].includes(n.type)?`<div class="node-summary">${n.type==='count'?`At least ${n.threshold} of ${inputs.length} yes`:`Sum > ${n.threshold}`}</div>`:''}${['boolean','scale'].includes(n.type)?`<div class="value-row">${marker('Value output: '+n.label+(dataUsed?'':' · optional, drag to a block'),`data-value-out="${esc(n.id)}"`,dataUsed?true:null)}</div>`:''}${flows.length?`<div class="flow-outputs">${flows.map((edge,i)=>`<div><span>${esc(edge.label)}</span>${marker(edge.label+': '+(edge.to?tree.nodes.find(q=>q.id===edge.to)?.label:'not connected'),`data-flow-out="${esc(n.id)}" data-slot="${i}"`,!!edge.to)}</div>`).join('')}</div>`:''}</article>`;
+    return `<article class="graph-node ${group(n)} ${n.type==='count'?'count-container':''}" data-card="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px" tabindex="0" aria-label="Edit ${esc(n.label)}"><div class="node-inputs">${n.mode!=='input'?marker('Flow input: '+n.label,`data-flow-in="${esc(n.id)}"`,n.id===tree.start?null:links.some(e=>e.kind==='flow'&&e.to===n.id)) :''}${(n.type==='count'?[]:inputs).map((id,i)=>`<div class="input-slot">${marker(`Input ${i+1}: ${id?tree.nodes.find(q=>q.id===id)?.label:'not connected'} · ${n.type==='count'?'binary only':'scalar only'}`,`data-data-in="${esc(n.id)}" data-slot="${i}"`,!!id)}<span>${i+1}</span></div>`).join('')}</div><header><span>${n.type==='hobbies'?'Auto check':esc(TYPES[n.type])}</span><span>${tree.start===n.id?'START':'⋮⋮'}</span></header><div class="graph-node-title">${esc(n.label)}</div>${['count','sum'].includes(n.type)?`<div class="node-summary">${n.type==='count'?`At least ${n.threshold} of ${inputs.length} yes`:`Sum > ${n.threshold}`}</div>`:''}${n.type==='count'?containerSlots(n,tree):''}${['boolean','scale'].includes(n.type)?`<div class="value-row">${marker('Value output: '+n.label+(dataUsed?'':' · optional, drag to a block'),`data-value-out="${esc(n.id)}"`,dataUsed?true:null)}</div>`:''}${flows.length?`<div class="flow-outputs">${flows.map((edge,i)=>`<div><span>${esc(edge.label)}</span>${marker(edge.label+': '+(edge.to?tree.nodes.find(q=>q.id===edge.to)?.label:'not connected'),`data-flow-out="${esc(n.id)}" data-slot="${i}"`,!!edge.to)}</div>`).join('')}</div>`:''}</article>`;
   }).join('')}</div></div></div>`}<footer class="editor-footer"><div class="type-legend"><span class="binary">Binary question</span><span class="scalar">Scalar question</span><span class="organization">Organizational block</span></div><span>${issues.length?'Draft · connections needed':'All connections valid'} · ${tree.nodes.length} nodes</span></footer></section>`;
 }
 function commit(tree,message){const errors=validateTree(tree,{allowUnconnected:true});if(errors.length)throw Error(errors.join('\n'));pending=null;undo=clone(context.tree);refreshTree(tree);context.notify(message);}
@@ -49,6 +50,10 @@ export function mountEditor(tree,change,notify){
       viewport.onpointerup=end;viewport.onpointercancel=end;
     };
   }
+  document.querySelectorAll('[data-contained]').forEach(el=>{
+    el.onpointerdown=e=>dragContained(e,el);
+    el.onclick=e=>{e.stopPropagation();nodePopup(el.dataset.contained,el);};
+  });
   requestAnimationFrame(drawWires);
 }
 function refreshTree(tree){
@@ -121,14 +126,42 @@ function connectPort(p){
 }
 function dragNode(e,el){
   if(e.button!==0||e.target.closest('button'))return;
-  closePopup();const node=context.tree.nodes.find(n=>n.id===el.dataset.card),before=clone(context.tree);
-  const sx=e.clientX,sy=e.clientY,ox=node.x,oy=node.y;let moved=false;
+  e.stopPropagation();closePopup();const node=context.tree.nodes.find(n=>n.id===el.dataset.card),before=clone(context.tree);
+  const sx=e.clientX,sy=e.clientY,ox=node.x,oy=node.y;let moved=false,drop=null;
   el.setPointerCapture(e.pointerId);
-  el.onpointermove=ev=>{if(!moved&&Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)<5)return;moved=true;node.x=Math.max(30,Math.round(ox+(ev.clientX-sx)/zoom));node.y=Math.max(50,Math.round(oy+(ev.clientY-sy)/zoom));el.style.left=node.x+'px';el.style.top=node.y+'px';drawWires();};
-  const end=()=>{el.onpointermove=null;el.onpointerup=null;el.onpointercancel=null;if(moved){el.dataset.dragged='true';undo=before;const box=document.querySelector('.graph-scroll'),left=box.scrollLeft,top=box.scrollTop;context.change(context.tree);document.querySelector('.graph-scroll').scrollTo(left,top);}};
+  el.onpointermove=ev=>{if(!moved&&Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)<5)return;moved=true;node.x=Math.max(30,Math.round(ox+(ev.clientX-sx)/zoom));node.y=Math.max(50,Math.round(oy+(ev.clientY-sy)/zoom));el.style.left=node.x+'px';el.style.top=node.y+'px';drop=findSlot(ev.clientX,ev.clientY,node.type);drawWires();};
+  const end=()=>{el.onpointermove=null;el.onpointerup=null;el.onpointercancel=null;clearSlots();if(moved){if(drop){const draft=clone(before);try{containQuestion(draft,node.id,drop.dataset.block,Number(drop.dataset.slot));context.tree=before;commit(draft,'Question placed inside block.');return;}catch(error){context.notify(error.message);}}el.dataset.dragged='true';undo=before;const box=document.querySelector('.graph-scroll'),left=box.scrollLeft,top=box.scrollTop;context.change(context.tree);document.querySelector('.graph-scroll').scrollTo(left,top);}};
   el.onpointerup=end;el.onpointercancel=end;
 }
 function closePopup(){document.querySelector('.node-popup')?.remove();}
+function containerSlots(block,tree){return '<div class="container-slots">'+block.inputs.map((id,i)=>{
+ const q=tree.nodes.find(n=>n.id===id);
+ return `<div class="question-slot ${q?'filled':''}" data-block="${esc(block.id)}" data-slot="${i}"><span class="slot-number">${i+1}</span>${q?`<button class="contained-question" data-contained="${esc(q.id)}" data-owner="${esc(block.id)}" data-index="${i}">${esc(q.label)}</button>`:'<span>Drop a yes/no question here</span>'}</div>`;
+ }).join('')+'</div>';}
+function clearSlots(){document.querySelectorAll('.question-slot').forEach(el=>el.classList.remove('drop-ready'));}
+function findSlot(x,y,type){clearSlots();if(type!=='boolean')return null;const slot=[...document.querySelectorAll('.question-slot:not(.filled)')].find(el=>{const r=el.getBoundingClientRect();return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;});slot?.classList.add('drop-ready');return slot;}
+function dragContained(e,el){
+ if(e.button!==0)return;e.stopPropagation();
+ const sx=e.clientX,sy=e.clientY;let moved=false,drop=null,ghost=null;
+ el.setPointerCapture(e.pointerId);
+ el.onpointermove=p=>{
+  if(!moved&&Math.hypot(p.clientX-sx,p.clientY-sy)<6)return;
+  if(!moved){moved=true;ghost=el.cloneNode(true);ghost.className='contained-drag-preview';document.body.append(ghost);}
+  ghost.style.left=p.clientX+12+'px';ghost.style.top=p.clientY+12+'px';drop=findSlot(p.clientX,p.clientY,'boolean');
+ };
+ const finish=p=>{
+  el.onpointermove=null;el.onpointerup=null;el.onpointercancel=null;ghost?.remove();clearSlots();
+  if(!moved||p.type==='pointercancel')return;
+  el.onclick=e=>e.stopPropagation();
+  const t=clone(context.tree),canvas=document.querySelector('.graph-canvas').getBoundingClientRect();
+  try{if(drop){containQuestion(t,el.dataset.contained,drop.dataset.block,Number(drop.dataset.slot));}
+  else{const bounds=document.querySelector('.graph-scroll').getBoundingClientRect();if(p.clientX<bounds.left||p.clientX>bounds.right||p.clientY<bounds.top||p.clientY>bounds.bottom)return;
+   releaseQuestion(t,el.dataset.owner,Number(el.dataset.index),Math.max(30,(p.clientX-canvas.left)/zoom),Math.max(50,(p.clientY-canvas.top)/zoom));}
+   commit(t,drop?'Question moved into slot.':'Question moved out of block.');
+  }catch(error){context.notify(error.message);}
+ };
+ el.onpointerup=finish;el.onpointercancel=finish;
+}
 function popupBounds(){
   const r=document.querySelector('.graph-editor')?.getBoundingClientRect();
   return {left:Math.max(8,r?.left||8)+8,right:Math.min(window.innerWidth-8,r?.right||window.innerWidth-8)-8,top:Math.max(8,r?.top||8)+8,bottom:Math.min(window.innerHeight-8,r?.bottom||window.innerHeight-8)-8};
