@@ -26,27 +26,42 @@ export function connections(tree){
 }
 export function setFlow(node,index,to){if(node.type==='scale')node.ranges[index].to=to;else if(node.type==='category')node.options[index].to=to;else node[index===0?'yes':'no']=to;}
 export function removeConnection(tree,edge){const n=tree.nodes.find(n=>n.id===(edge.kind==='data'?edge.to:edge.from));if(edge.kind==='data')n.inputs[edge.index]='';else setFlow(n,edge.index,'');}
-export function layoutTree(tree){
+export function layoutTree(tree,{heights={}}={}){
   // Long edges get virtual nodes, so barycentric sweeps consider crossings across every layer.
-  const ids=tree.nodes.map(n=>n.id),valid=new Set(ids),links=connections(tree).filter(e=>valid.has(e.from)&&valid.has(e.to));
+  const hidden=new Set(tree.nodes.filter(n=>n.mode==='input'&&tree.nodes.some(b=>['count','sum'].includes(b.type)&&b.inputs?.includes(n.id))).map(n=>n.id));
+  const ids=tree.nodes.filter(n=>!hidden.has(n.id)).map(n=>n.id),valid=new Set(ids),links=connections(tree).filter(e=>valid.has(e.from)&&valid.has(e.to));
+  if(!ids.length)return {width:1000,height:600,crossings:0};
   const rank=new Map(ids.map(id=>[id,0])),indegree=new Map(ids.map(id=>[id,0]));
   for(const e of links)indegree.set(e.to,indegree.get(e.to)+1);
   const queue=ids.filter(id=>!indegree.get(id));let visited=0;
   while(queue.length){const id=queue.shift();visited++;for(const e of links.filter(e=>e.from===id)){rank.set(e.to,Math.max(rank.get(e.to),rank.get(id)+1));indegree.set(e.to,indegree.get(e.to)-1);if(!indegree.get(e.to))queue.push(e.to);}}
   if(visited!==ids.length)throw Error('Remove loops before cleaning up.');
-  const layers=Array.from({length:Math.max(...rank.values())+1},()=>[]),segments=[];
+  const layers=Array.from({length:Math.max(...rank.values())+1},()=>[]),segments=[],paths=new Map();
   for(const id of ids)layers[rank.get(id)].push(id);
-  links.forEach((edge,i)=>{let prev=edge.from;for(let r=rank.get(edge.from)+1;r<rank.get(edge.to);r++){const id='@'+i+':'+r;layers[r].push(id);segments.push([prev,id]);prev=id;}segments.push([prev,edge.to]);});
+  links.forEach((edge,i)=>{let prev=edge.from;const path=new Map();for(let r=rank.get(edge.from)+1;r<rank.get(edge.to);r++){const id='@'+i+':'+r;layers[r].push(id);segments.push([prev,id]);path.set(r,id);prev=id;}segments.push([prev,edge.to]);path.set(rank.get(edge.to),edge.to);paths.set(edge,path);});
+  // Respect output order wherever distinct branch paths share a layer.
+  const constraints=layers.map(()=>[]);
+  for(const id of ids){const outgoing=links.filter(e=>e.from===id&&e.kind==='flow').sort((a,b)=>a.index-b.index);
+    for(let i=0;i<outgoing.length;i++)for(let j=i+1;j<outgoing.length;j++)for(const [r,a] of paths.get(outgoing[i])){const b=paths.get(outgoing[j]).get(r);if(b&&a!==b)constraints[r].push([a,b]);}}
+  const orderBranches=(row,r)=>{
+    const result=[],remaining=new Set(row);
+    while(remaining.size){const next=row.find(id=>remaining.has(id)&&!constraints[r].some(([a,b])=>b===id&&remaining.has(a)));
+      // Shared destinations can impose conflicting order; retain stable order there.
+      if(next===undefined){result.push(...row.filter(id=>remaining.has(id)));break;}result.push(next);remaining.delete(next);}
+    return result;
+  };
+  layers.forEach((row,r)=>layers[r]=orderBranches(row,r));
   const position=()=>new Map(layers.flatMap(row=>row.map((id,i)=>[id,i])));
   const crossings=()=>{const pos=position();let count=0;for(let i=0;i<segments.length;i++)for(let j=i+1;j<segments.length;j++){const [a,b]=segments[i],[c,d]=segments[j];if(a===c||b===d)continue;const row=layers.findIndex(l=>l.includes(a));if(layers[row]?.includes(c)&&layers[row+1]?.includes(b)&&layers[row+1]?.includes(d)&&(pos.get(a)-pos.get(c))*(pos.get(b)-pos.get(d))<0)count++;}return count;};
   let best=layers.map(l=>[...l]),score=crossings();
   for(let pass=0;pass<10;pass++){
     const down=pass%2===0;const order=layers.map((_,i)=>i);if(!down)order.reverse();
     for(const r of order){const pos=position();const bary=id=>{const neighbors=segments.filter(e=>e[down?1:0]===id).map(e=>pos.get(e[down?0:1]));return neighbors.length?neighbors.reduce((a,b)=>a+b,0)/neighbors.length:pos.get(id);};layers[r].sort((a,b)=>bary(a)-bary(b)||pos.get(a)-pos.get(b));}
+    layers.forEach((row,r)=>layers[r]=orderBranches(row,r));
     const next=crossings();if(next<=score){score=next;best=layers.map(l=>[...l]);}
   }
   const width=Math.max(1000,...best.map(l=>l.length*280+100));
-  const rowGap=Math.max(270,...tree.nodes.filter(n=>n.type==='count').map(n=>150+(n.inputs?.length||0)*65));
-  for(let r=0;r<best.length;r++)best[r].forEach((id,i)=>{const n=tree.nodes.find(n=>n.id===id);if(n){n.x=Math.round((width-best[r].length*280)/2+i*280);n.y=80+r*rowGap;}});
-  return {width,height:Math.max(850,best.length*rowGap+160),crossings:score};
+  let y=60;
+  for(const row of best){let tallest=70;row.forEach((id,i)=>{const n=tree.nodes.find(n=>n.id===id);if(n){n.x=Math.round((width-row.length*280)/2+i*280);n.y=y;tallest=Math.max(tallest,heights[id]||(['count','sum'].includes(n.type)?120+(n.inputs?.length||0)*65:120));}});y+=tallest+55;}
+  return {width,height:Math.max(600,y+40),crossings:score};
 }
