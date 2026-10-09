@@ -1,0 +1,9 @@
+node_modules/
+.openai/
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
+/*preview.jpg
+/private-photo-samples/
